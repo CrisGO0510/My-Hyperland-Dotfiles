@@ -1,0 +1,1 @@
+1|36|top|( cpu memory ) ( hyprland/workspaces )|( custom/cava idle_inhibitor clock )|( backlight network pulseaudio pulseaudio#microphone custom/updates custom/keybindhint ) ( privacy tray battery ) ( custom/wallchange custom/theme custom/wbar custom/cliphist custom/power )
