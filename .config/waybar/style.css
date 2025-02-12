@@ -1,7 +1,7 @@
 * {
     border: none;
     border-radius: 0px;
-    font-family: "JetBrainsMono Nerd Font";
+    font-family: "JetBrainsMono Nerd Font","JetBrainsMono Nerd Font";
     font-weight: bold;
     font-size: 12px;
     min-height: 10px;
@@ -103,6 +103,7 @@ tooltip {
 #clock,
 #custom-cpuinfo,
 #cpu,
+#custom-display,
 #custom-github_hyde,
 #custom-github_hyprdots,
 #custom-gpuinfo,
@@ -117,6 +118,7 @@ tooltip {
 #custom-power,
 #privacy,
 #pulseaudio,
+#custom-sensorsinfo,
 #custom-spotify,
 #taskbar,
 #taskbar,

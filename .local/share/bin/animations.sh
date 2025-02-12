@@ -1,84 +1,117 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
-# Define paths
-scrDir=$(dirname "$(realpath "$0")")
-source "$scrDir/globalcontrol.sh"
-config_dir="$HOME/.config"
-animations_dir="$config_dir/hypr/animations"
-animations_conf="$config_dir/hypr/animations.conf"
-rofi_theme="$config_dir/rofi/clipboard.rasi"
-
-# Set rofi scaling
-[[ "${rofiScale}" =~ ^[0-9]+$ ]] || rofiScale=10
-r_scale="configuration {font: \"JetBrainsMono Nerd Font ${rofiScale}\";}"
-wind_border=$((hypr_border * 3 / 2))
-elem_border=$([ $hypr_border -eq 0 ] && echo "5" || echo $hypr_border)
-
-# Evaluate spawn position
-readarray -t curPos < <(hyprctl cursorpos -j | jq -r '.x,.y')
-readarray -t monRes < <(hyprctl -j monitors | jq '.[] | select(.focused==true) | .width,.height,.scale,.x,.y')
-readarray -t offRes < <(hyprctl -j monitors | jq -r '.[] | select(.focused==true).reserved | map(tostring) | join("\n")')
-monRes[2]="$(echo "${monRes[2]}" | sed "s/\.//")"
-monRes[0]="$(( ${monRes[0]} * 100 / ${monRes[2]} ))"
-monRes[1]="$(( ${monRes[1]} * 100 / ${monRes[2]} ))"
-curPos[0]="$(( ${curPos[0]} - ${monRes[3]} ))"
-curPos[1]="$(( ${curPos[1]} - ${monRes[4]} ))"
-
-if [ "${curPos[0]}" -ge "$((${monRes[0]} / 2))" ] ; then
-    x_pos="east"
-    x_off="-$(( ${monRes[0]} - ${curPos[0]} - ${offRes[2]} ))"
-else
-    x_pos="west"
-    x_off="$(( ${curPos[0]} - ${offRes[0]} ))"
+# shellcheck source=$HOME/.local/bin/hyde-shell
+# shellcheck disable=SC1091
+if ! source "$(which hyde-shell)"; then
+    echo "[wallbash] code :: Error: hyde-shell not found."
+    echo "[wallbash] code :: Is HyDE installed?"
+    exit 1
 fi
 
-if [ "${curPos[1]}" -ge "$((${monRes[1]} / 2))" ] ; then
-    y_pos="south"
-    y_off="-$(( ${monRes[1]} - ${curPos[1]} - ${offRes[3]} ))"
-else
-    y_pos="north"
-    y_off="$(( ${curPos[1]} - ${offRes[1]} ))"
-fi
-
-r_override="window{location:${x_pos} ${y_pos};anchor:${x_pos} ${y_pos};x-offset:${x_off}px;y-offset:${y_off}px;border:${hypr_width}px;border-radius:${wind_border}px;} wallbox{border-radius:${elem_border}px;} element{border-radius:${elem_border}px;}"
+# Set variables
+confDir="${confDir:-$XDG_CONFIG_HOME}"
+animations_dir="$confDir/hypr/animations"
 
 # Ensure the animations directory exists
 if [ ! -d "$animations_dir" ]; then
-    notify-send "Error" "Animations directory does not exist at $animations_dir"
+    notify-send -i "preferences-desktop-display" "Error" "Animations directory does not exist at $animations_dir"
     exit 1
 fi
 
 # List available .conf files in animations directory
-animation_files=$(ls "$animations_dir"/*.conf 2>/dev/null)
-if [ -z "$animation_files" ]; then
-    notify-send "Error" "No .conf files found in $animations_dir"
+animation_items=$(find "$animations_dir" -name "*.conf" ! -name "disable.conf" ! -name "theme.conf" 2>/dev/null | sed 's/\.conf$//')
+
+if [ -z "$animation_items" ]; then
+    notify-send -i "preferences-desktop-display" "Error" "No .conf files found in $animations_dir"
     exit 1
 fi
 
-# Display options using Rofi with custom scaling, positioning, and placeholder
-selected_animation=$(echo "$animation_files" | awk -F/ '{print $NF}' | \
-    rofi -dmenu \
-         -p "Select animation" \
-         -theme-str "entry { placeholder: \"Select animation...\"; }" \
-         -theme-str "${r_scale}" \
-         -theme-str "${r_override}" \
-         -theme "$rofi_theme")
+fn_select() {
 
-# Exit if no selection was made
-if [ -z "$selected_animation" ]; then
-    exit 0
-fi
+    # Set rofi scaling
+    font_scale="${ROFI_ANIMATION_SCALE}"
+    [[ "${font_scale}" =~ ^[0-9]+$ ]] || font_scale=${ROFI_SCALE:-10}
 
-# Generate the new source line
-selected_path="$animations_dir/$selected_animation"
-new_source_line="source = $selected_path"
+    # Set font name
+    font_name=${ROFI_ANIMATION_FONT:-$ROFI_FONT}
+    font_name=${font_name:-$(get_hyprConf "MENU_FONT")}
+    font_name=${font_name:-$(get_hyprConf "FONT")}
 
-# Update the animations.conf file
-if grep -q "^source = " "$animations_conf"; then
-    sed -i "s|^source = .*|$new_source_line|" "$animations_conf"
+    # Set rofi font override
+    font_override="* {font: \"${font_name:-"JetBrainsMono Nerd Font"} ${font_scale}\";}"
+
+    # Window and element styling
+    hypr_border=${hypr_border:-"$(hyprctl -j getoption decoration:rounding | jq '.int')"}
+    wind_border=$((hypr_border * 3 / 2))
+    elem_border=$((hypr_border == 0 ? 5 : hypr_border))
+    hypr_width=${hypr_width:-"$(hyprctl -j getoption general:border_size | jq '.int')"}
+    r_override="window{border:${hypr_width}px;border-radius:${wind_border}px;} wallbox{border-radius:${elem_border}px;} element{border-radius:${elem_border}px;}"
+
+    animation_items="Disable Animation
+Theme Preference
+$animation_items"
+    rofi_select="${HYPR_ANIMATION/theme/Theme Preference}"
+    rofi_select="${rofi_select/disable/Disable Animation}"
+
+    # Display options using Rofi with custom scaling, positioning, and placeholder
+    selected_animation=$(awk -F/ '{print $NF}' <<<"$animation_items" |
+        rofi -dmenu -i -select "$rofi_select" \
+            -p "Select animation" \
+            -theme-str "entry { placeholder: \"Select animation...\"; }" \
+            -theme-str "${font_override}" \
+            -theme-str "${r_override}" \
+            -theme-str "$(get_rofi_pos)" \
+            -theme "clipboard")
+
+    # Exit if no selection was made
+    if [ -z "$selected_animation" ]; then
+        exit 0
+    fi
+    case $selected_animation in
+    "Disable Animation")
+        selected_animation="disable"
+        ;;
+    "Theme Preference")
+        selected_animation="theme"
+        ;;
+    esac
+
+    set_conf "HYPR_ANIMATION" "$selected_animation"
+    fn_update
+    # Notify the user
+    notify-send -i "preferences-desktop-display" "Animation:" "$selected_animation"
+}
+
+fn_update() {
+    [ -f "$HYDE_STATE_HOME/config" ] && source "$HYDE_STATE_HOME/config"
+    [ -f "$HYDE_STATE_HOME/staterc" ] && source "$HYDE_STATE_HOME/staterc"
+    local animDir="$confDir/hypr/animations"
+    current_animation=${HYPR_ANIMATION:-"theme"}
+    echo "Animation updated to: $current_animation"
+    cat <<EOF >"${confDir}/hypr/animations.conf"
+
+#! ▄▀█ █▄░█ █ █▀▄▀█ ▄▀█ ▀█▀ █ █▀█ █▄░█
+#! █▀█ █░▀█ █ █░▀░█ █▀█ ░█░ █ █▄█ █░▀█
+
+# See https://wiki.hyprland.org/Configuring/Animations/
+# HyDE Controlled content // DO NOT EDIT
+# Edit or add animations in the ./hypr/animations/ directory
+# and run the 'animations.sh select' command to update this file
+
+\$ANIMATION=${current_animation}
+\$ANIMATION_PATH=${animDir}/${current_animation}.conf
+
+EOF
+    # cat "${animDir}/${current_animation}.conf" >>"${confDir}/hypr/animations.conf"
+}
+
+if declare -f "fn_${1}" >/dev/null; then
+    "fn_${1}"
 else
-    echo "$new_source_line" >> "$animations_conf"
-fi
+    cat <<HELP
+Usage:
+    select    Select an animation from the available options
+    update    Update the animation to the selected option
 
-# Notify the user
-notify-send "Animation Updated" "Sourced $selected_animation"
+HELP
+fi
