@@ -1,104 +1,45 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
+
 
 #// set variables
 
 scrDir="$(dirname "$(realpath "$0")")"
-confDir="${confDir}/config"
-# shellcheck source=/dev/null
-. "${scrDir}/globalcontrol.sh"
-rofiStyle="${rofiStyle:-1}"
+source "${scrDir}/globalcontrol.sh"
+roconf="${confDir}/rofi/styles/style_${rofiStyle}.rasi"
 
-if [[ "${rofiStyle}" =~ ^[0-9]+$ ]]; then
-    rofi_config="style_${rofiStyle:-1}"
-else
-    rofi_config="${rofiStyle:-"style_1"}"
+[[ "${rofiScale}" =~ ^[0-9]+$ ]] || rofiScale=10
+
+if [ ! -f "${roconf}" ] ; then
+    roconf="$(find "${confDir}/rofi/styles" -type f -name "style_*.rasi" | sort -t '_' -k 2 -n | head -1)"
 fi
 
-rofi_config="${ROFI_LAUNCH_STYLE:-$rofi_config}"
-
-font_scale="${ROFI_LAUNCHER_SCALE}"
-[[ "${font_scale}" =~ ^[0-9]+$ ]] || font_scale=${ROFI_SCALE:-10}
 
 #// rofi action
 
 case "${1}" in
-d | --drun)
-    r_mode="drun"
-    rofi_config="${ROFI_LAUNCH_DRUN_STYLE:-$rofi_config}"
-    ;;
-w | --window)
-    r_mode="window"
-    rofi_config="${ROFI_LAUNCH_WINDOW_STYLE:-$rofi_config}"
-    ;;
-f | --filebrowser)
-    r_mode="filebrowser"
-    rofi_config="${ROFI_LAUNCH_FILEBROWSER_STYLE:-$rofi_config}"
-    ;;
-r | --run)
-    r_mode="run"
-    rofi_config="${ROFI_LAUNCH_RUN_STYLE:-$rofi_config}"
-    ;;
-h | --help)
-    echo -e "$(basename "${0}") [action]"
-    echo "d :  drun mode"
-    echo "w :  window mode"
-    echo "f :  filebrowser mode,"
-    echo "r :  run mode"
-    exit 0
-    ;;
-*)
-    r_mode="drun"
-    ROFI_LAUNCH_DRUN_STYLE="${ROFI_LAUNCH_DRUN_STYLE:-$ROFI_LAUNCH_STYLE}"
-    rofi_config="${ROFI_LAUNCH_DRUN_STYLE:-$rofi_config}"
-    ;;
+    d|--drun) r_mode="drun" ;; 
+    w|--window) r_mode="window" ;;
+    f|--filebrowser) r_mode="filebrowser" ;;
+    h|--help) echo -e "$(basename "${0}") [action]"
+        echo "d :  drun mode"
+        echo "w :  window mode"
+        echo "f :  filebrowser mode,"
+        exit 0 ;;
+    *) r_mode="drun" ;;
 esac
 
+
 #// set overrides
-hypr_border="${hypr_border:-10}"
-hypr_width="${hypr_width:-2}"
-wind_border=$((hypr_border * 3))
 
-if [[ -f "${HYDE_STATE_HOME}/fullscreen_${r_mode}" ]]; then
-    hypr_width="0"
-    wind_border="0"
-fi
-
-[ "${hypr_border}" -eq 0 ] && elem_border="10" || elem_border=$((hypr_border * 2))
+wind_border=$(( hypr_border * 3 ))
+[ "${hypr_border}" -eq 0 ] && elem_border="10" || elem_border=$(( hypr_border * 2 ))
 r_override="window {border: ${hypr_width}px; border-radius: ${wind_border}px;} element {border-radius: ${elem_border}px;}"
-
-# set font name
-font_name=${ROFI_LAUNCH_FONT:-$ROFI_FONT}
-font_name=${font_name:-$(get_hyprConf "MENU_FONT")}
-font_name=${font_name:-$(get_hyprConf "FONT")}
-
-# set rofi font override
-font_override="* {font: \"${font_name:-"JetBrainsMono Nerd Font"} ${font_scale}\";}"
-
-i_override="$(get_hyprConf "ICON_THEME")"
+r_scale="configuration {font: \"JetBrainsMono Nerd Font ${rofiScale}\";}"
+i_override="$(gsettings get org.gnome.desktop.interface icon-theme | sed "s/'//g")"
 i_override="configuration {icon-theme: \"${i_override}\";}"
 
+
 #// launch rofi
-rofi -show "${r_mode}" \
-    -show-icons \
-    -theme-str "${font_override}" \
-    -theme-str "${i_override}" \
-    -theme-str "${r_override}" \
-    -theme "${rofi_config}" &
-disown
 
-#// Set full screen state
-#TODO Contributor notes:
-#? - Workaround to set the full screen state of rofi dynamically and efficiently.
-#? - Avoids invoking rofi twice before rendering.
-#? - Checks if the theme has fullscreen set to true after rendering.
-#? - Sets the variable accordingly for use on the next launch.
+rofi -show "${r_mode}" -theme-str "${r_scale}" -theme-str "${r_override}" -theme-str "${i_override}" -config "${roconf}"
 
-rofi -show "${r_mode}" \
-    -show-icons \
-    -config "${rofi_config}" \
-    -theme-str "${font_override}" \
-    -theme-str "${i_override}" \
-    -theme-str "${r_override}" \
-    -theme "${rofi_config}" \
-    -dump-theme |
-    { grep -q "fullscreen.*true" && touch "${HYDE_STATE_HOME}/fullscreen_${r_mode}"; } || rm -f "${HYDE_STATE_HOME}/fullscreen_${r_mode}"

@@ -1,139 +1,48 @@
-#!/usr/bin/env bash
-# shellcheck disable=SC2154
+#!/usr/bin/env sh
 
 #// set variables
 
-scrDir="$(dirname "$(realpath "$0")")"
-export scrDir
-# shellcheck disable=SC1091
+export scrDir="$(dirname "$(realpath "$0")")"
 source "${scrDir}/globalcontrol.sh"
 wallbashImg="${1}"
 
-# Parse arguments
-dcol_colors=""
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-    --dcol)
-        dcol_colors="$2"
-        if [ -f "${dcol_colors}" ]; then
-            echo "[Source] ${dcol_colors}"
-            # shellcheck disable=SC1090
-            source "${dcol_colors}"
-            shift 2
-        else
-            dcol_colors="$(find "${dcolDir}" -type f -name "*.dcol" | shuf -n 1)"
-            echo "[Dcol Colors] ${dcol_colors}"
-            shift
-        fi
-        ;;
-    --wall)
-        wallbashImg="$2"
-        shift 2
-        ;;
-    --single)
-        [ -f "${wallbashImg}" ] || wallbashImg="${cacheDir}/wall.set"
-        single_template="$2"
-        echo "[wallbash] Single template: ${single_template}"
-        echo "[wallbash] Wallpaper: ${wallbashImg}"
-        shift 2
-        #     ;;
-        # --mode)
-        #     enableWallDcol="$2"
-        #     shift 2
-        ;;
-    -*)
-        echo "Usage: $0 [--dcol <mode>] [--wall <image>] [--single] [--mode <mode>] [--help]"
-        exit 0
-        ;;
-    *) break ;;
-    esac
-done
 
 #// validate input
 
-if [ -z "${wallbashImg}" ] || [ ! -f "${wallbashImg}" ]; then
+if [ -z "${wallbashImg}" ] || [ ! -f "${wallbashImg}" ] ; then
     echo "Error: Input wallpaper not found!"
     exit 1
 fi
-# shellcheck disable=SC2154
 wallbashOut="${dcolDir}/$(set_hash "${wallbashImg}").dcol"
 
-if [ ! -f "${wallbashOut}" ]; then
-    "${scrDir}/swwwallcache.sh" -w "${wallbashImg}" &>/dev/null
+if [ ! -f "${wallbashOut}" ] ; then
+    "${scrDir}/swwwallcache.sh" -w "${wallbashImg}" &> /dev/null
 fi
 
 set -a
-# shellcheck disable=SC1090
 source "${wallbashOut}"
-# shellcheck disable=SC2154
-if [ -f "${HYDE_THEME_DIR}/theme.dcol" ] && [ "${enableWallDcol}" -eq 0 ]; then
-    # shellcheck disable=SC1091
-    source "${HYDE_THEME_DIR}/theme.dcol"
-    print_log -sec "wallbash" -stat "override" "dominant colors from ${HYDE_THEME} theme"
-    print_log -sec "wallbash" -stat " NOTE" "Remove \"${HYDE_THEME_DIR}/theme.dcol\" to use wallpaper dominant colors"
+if [ -f "${hydeThemeDir}/theme.dcol" ] && [ "${enableWallDcol}" -eq 0 ]  ; then
+    source "${hydeThemeDir}/theme.dcol"
+    echo "[theme] Overriding dominant colors from \"${hydeTheme}\""
+    echo "[note] Remove \"${hydeThemeDir}/theme.dcol\" to use wallpaper dominant colors"
 fi
-# shellcheck disable=SC2154
 [ "${dcol_mode}" == "dark" ] && dcol_invt="light" || dcol_invt="dark"
 set +a
 
-if [ -z "$gtkTheme" ]; then
-    if [ "${enableWallDcol}" -eq 0 ]; then
-        gtkTheme="$(get_hyprConf "GTK_THEME")"
-    else
-        gtkTheme="Wallbash-Gtk"
-    fi
-fi
-[ -z "$gtkIcon" ] && gtkIcon="$(get_hyprConf "ICON_THEME")"
-[ -z "$cursorTheme" ] && cursorTheme="$(get_hyprConf "CURSOR_THEME")"
-export gtkTheme gtkIcon cursorTheme
 
 #// deploy wallbash colors
 
-fn_wallbash() {
-    local template="${1}"
-    local temp_target_file exec_command
-    WALLBASH_SCRIPTS="${template%%hyde/wallbash*}hyde/wallbash/scripts"
-    if [[ "${template}" == *.theme ]]; then
-        # This is approach is to handle the theme files
-        # We don't want themes to launch the exec_command or any arbitrary codes
-        # To enable this we should have a *.dcol file as a companion to the theme file
-        IFS=':' read -r -a wallbashDirs <<<"$WALLBASH_DIRS"
-        template_name="${template##*/}"
-        template_name="${template_name%.*}"
-        # echo "${wallbashDirs[@]}"
-        dcolTemplate=$(find "${wallbashDirs[@]}" -type f -path "*/theme*" -name "${template_name}.dcol" 2>/dev/null | awk '!seen[substr($0, match($0, /[^/]+$/))]++')
-        if [[ -n "${dcolTemplate}" ]]; then
-            eval target_file="$(head -1 "${dcolTemplate}" | awk -F '|' '{print $1}')"
-            exec_command="$(head -1 "${dcolTemplate}" | awk -F '|' '{print $2}')"
-            WALLBASH_SCRIPTS="${dcolTemplate%%hyde/wallbash*}hyde/wallbash/scripts"
+fn_wallbash () {
+    local tplt="${1}"
+    [ -f "${hydeConfDir}/hyde.conf" ] && source "${hydeConfDir}/hyde.conf"
+    # Skips the the template declared in ./hyde.conf
+    [[ " ${skip_wallbash[@]} " =~ " ${tplt} " ]] && echo "[skip: template] ${tplt}" && return 0
+    eval target="$(head -1 "${tplt}" | awk -F '|' '{print $1}')"
+    [ ! -d "$(dirname "${target}")" ] && echo "[skip: no dir] \"${target}\"" && return 0
+    appexe="$(head -1 "${tplt}" | awk -F '|' '{print $2}')"
+    sed '1d' "${tplt}" > "${target}"
 
-        fi
-    fi
-
-    # shellcheck disable=SC1091
-    # shellcheck disable=SC2154
-    [ -f "$HYDE_STATE_HOME/state" ] && source "$HYDE_STATE_HOME/state"
-    # shellcheck disable=SC1091
-    [ -f "$HYDE_STATE_HOME/config" ] && source "$HYDE_STATE_HOME/config"
-    if [[ -n "${WALLBASH_SKIP_TEMPLATE[*]}" ]]; then
-        for skip in "${WALLBASH_SKIP_TEMPLATE[@]}"; do
-            if [[ "${template}" =~ ${skip} ]]; then
-                print_log -sec "wallbash" -warn "skip '$skip' template " "Template: ${template}"
-                return 0
-            fi
-        done
-    fi
-
-    [ -z "${target_file}" ] && eval target_file="$(head -1 "${template}" | awk -F '|' '{print $1}')"
-    [ ! -d "$(dirname "${target_file}")" ] && print_log -sec "wallbash" -warn "skip 'missing directory'" "${target_file} // Do you have the dependency installed?" && return 0
-    export wallbashScripts="${WALLBASH_SCRIPTS}"
-    export WALLBASH_SCRIPTS confDir hydeConfDir cacheDir thmbDir dcolDir iconsDir themesDir fontsDir wallbashDirs enableWallDcol HYDE_THEME_DIR HYDE_THEME gtkIcon gtkTheme cursorTheme
-    export -f pkg_installed print_log
-    # exec_command="$(head -1 "${template}" | awk -F '|' '{print $2}')"
-    exec_command="${exec_command:-"$(head -1 "${template}" | awk -F '|' '{print $2}')"}"
-    temp_target_file="$(mktemp)"
-    sed '1d' "${template}" >"${temp_target_file}"
-    if [[ ${revert_colors} -eq 1 ]] || [[ "${enableWallDcol}" -eq 2 && "${dcol_mode}" == "light" ]] || [[ "${enableWallDcol}" -eq 3 && "${dcol_mode}" == "dark" ]]; then
+    if [[ "${enableWallDcol}" -eq 2 && "${dcol_mode}" == "light" ]] || [[ "${enableWallDcol}" -eq 3 && "${dcol_mode}" == "dark" ]] ; then
         sed -i 's/<wallbash_mode>/'"${dcol_invt}"'/g
                 s/<wallbash_pry1>/'"${dcol_pry4}"'/g
                 s/<wallbash_txt1>/'"${dcol_txt4}"'/g
@@ -222,7 +131,7 @@ fn_wallbash() {
                 s/<wallbash_4xa6_rgba(\([^)]*\))>/'"${dcol_1xa4_rgba}"'/g
                 s/<wallbash_4xa7_rgba(\([^)]*\))>/'"${dcol_1xa3_rgba}"'/g
                 s/<wallbash_4xa8_rgba(\([^)]*\))>/'"${dcol_1xa2_rgba}"'/g
-                s/<wallbash_4xa9_rgba(\([^)]*\))>/'"${dcol_1xa1_rgba}"'/g' "${temp_target_file}"
+                s/<wallbash_4xa9_rgba(\([^)]*\))>/'"${dcol_1xa1_rgba}"'/g' "${target}"
     else
         sed -i 's/<wallbash_mode>/'"${dcol_mode}"'/g
                 s/<wallbash_pry1>/'"${dcol_pry1}"'/g
@@ -312,75 +221,45 @@ fn_wallbash() {
                 s/<wallbash_4xa6_rgba(\([^)]*\))>/'"${dcol_4xa6_rgba}"'/g
                 s/<wallbash_4xa7_rgba(\([^)]*\))>/'"${dcol_4xa7_rgba}"'/g
                 s/<wallbash_4xa8_rgba(\([^)]*\))>/'"${dcol_4xa8_rgba}"'/g
-                s/<wallbash_4xa9_rgba(\([^)]*\))>/'"${dcol_4xa9_rgba}"'/g' "${temp_target_file}"
+                s/<wallbash_4xa9_rgba(\([^)]*\))>/'"${dcol_4xa9_rgba}"'/g' "${target}"
     fi
 
-    # Option to make dcol templates hande basic environment variables
-    sed -i 's|<<HOME>>|'"${HOME}"'|g' "${temp_target_file}"
-
-    if [ -s "${temp_target_file}" ]; then
-        mv "${temp_target_file}" "${target_file}"
-    fi
-    [ -z "${exec_command}" ] || bash -c "${exec_command}"
+    [ -z "${appexe}" ] || bash -c "${appexe}"
 }
 
-WALLBASH_DIRS=""
-for dir in "${wallbashDirs[@]}"; do
-    [ -d "${dir}" ] || wallbashDirs=("${wallbashDirs[@]//$dir/}")
-    [ -d "$dir" ] && WALLBASH_DIRS+="$dir:"
-done
-WALLBASH_DIRS="${WALLBASH_DIRS%:}"
+export -f fn_wallbash
 
-if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then PATH="$HOME/.local/bin:${PATH}"; fi
-export WALLBASH_DIRS PATH
-export -f fn_wallbash print_log pkg_installed
-
-if [ -n "${dcol_colors}" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${dcol_colors}"
-    print_log -sec "wallbash" -stat "single instance" "Wallbash Colors: ${dcol_colors}"
-    set +a
-fi
-
-# Single template mode
-if [ -n "${single_template}" ]; then
-    fn_wallbash "${single_template}"
-    exit 0
-fi
-
-# Run when hyprland is running
-if [ -n "$HYPRLAND_INSTANCE_SIGNATURE" ]; then
-    hyprctl keyword misc:disable_autoreload 1 -q
-    trap 'print_log -sec "[wallbash]" -stat "reload"  "Hyprland" && hyprctl reload -q' EXIT
-fi
-# Print to terminal the colors
-[ -t 1 ] && "${scrDir}/wallbash.print.colors.sh"
+[ -n "$HYPRLAND_INSTANCE_SIGNATURE" ] &&  hyprctl keyword misc:disable_autoreload 1 -q && trap 'hyprctl reload -q && echo "[swwwallbash] reload :: Hyprland"' EXIT
 
 #// switch theme <//> wall based colors
 
-# shellcheck disable=SC2154
-if [ "${enableWallDcol}" -eq 0 ] && [[ "${reload_flag}" -eq 1 ]]; then
+if [ "${enableWallDcol}" -eq 0 ] && [[ "${reload_flag}" -eq 1 ]] ; then
 
-    print_log -sec "wallbash" -stat "apply ${dcol_mode} colors" "${HYDE_THEME} theme"
-    mapfile -d '' -t deployList < <(find "${HYDE_THEME_DIR}" -type f -name "*.theme" -print0)
+    echo ":: deploying ${hydeTheme} colors :: ${dcol_mode} wallpaper detected"
+    mapfile -d '' -t deployList < <(find "${hydeThemeDir}" -type f -name "*.theme" -print0)
 
-    while read -r pKey; do
-        fKey="$(find "${HYDE_THEME_DIR}" -type f -name "$(basename "${pKey%.dcol}.theme")")"
+    while read -r pKey ; do
+        fKey="$(find "${hydeThemeDir}" -type f -name "$(basename "${pKey%.dcol}.theme")")"
         [ -z "${fKey}" ] && deployList+=("${pKey}")
-    done < <(find "${wallbashDirs[@]}" -type f -path "*/theme*" -name "*.dcol" 2>/dev/null | awk '!seen[substr($0, match($0, /[^/]+$/))]++')
+    done < <(find "${wallbashDir}/Wall-Dcol" -type f -name "*.dcol")
 
     parallel fn_wallbash ::: "${deployList[@]}"
 
-elif [ "${enableWallDcol}" -gt 0 ]; then
-    print_log -sec "wallbash" -stat "apply ${dcol_mode} colors" "Wallbash theme"
-    # This is the reason we avoid SPACES for the wallbash template names
-    find "${wallbashDirs[@]}" -type f -path "*/theme*" -name "*.dcol" 2>/dev/null | awk '!seen[substr($0, match($0, /[^/]+$/))]++' | parallel fn_wallbash {}
+elif [ "${enableWallDcol}" -gt 0 ] ; then
+
+    echo ":: deploying wallbash colors :: ${dcol_mode} wallpaper detected"
+    find "${wallbashDir}/Wall-Dcol" -type f -name "*.dcol" | parallel fn_wallbash {}
+
 fi
 
 #  Theme mode: detects the color-scheme set in hypr.theme and falls back if nothing is parsed.
-revert_colors=0
-[ "${enableWallDcol}" -eq 0 ] && { grep -q "${dcol_mode}" <<<"$(get_hyprConf "COLOR_SCHEME")" || revert_colors=1; }
-export revert_colors
+if [ "${enableWallDcol}" -eq 0 ]; then
+    colorScheme="$({ grep -q "^[[:space:]]*\$COLOR-SCHEME\s*=" "${hydeThemeDir}/hypr.theme" && grep "^[[:space:]]*\$COLOR-SCHEME\s*=" "${hydeThemeDir}/hypr.theme" | cut -d '=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' ;} || 
+                    grep 'gsettings set org.gnome.desktop.interface color-scheme' "${hydeThemeDir}/hypr.theme" | awk -F "'" '{print $((NF - 1))}')"
+    colorScheme=${colorScheme:-$(gsettings get org.gnome.desktop.interface color-scheme)} 
+    # should be declared explicitly so we can easily debug
+    grep -q "dark" <<< "${colorScheme}" && enableWallDcol=2
+    grep -q "light" <<< "${colorScheme}" && enableWallDcol=3 
+fi
 
-find "${wallbashDirs[@]}" -type f -path "*/always*" -name "*.dcol" 2>/dev/null | sort | awk '!seen[substr($0, match($0, /[^/]+$/))]++' | parallel fn_wallbash {}
+find "${wallbashDir}/Wall-Ways" -type f -name "*.dcol" | parallel fn_wallbash {}

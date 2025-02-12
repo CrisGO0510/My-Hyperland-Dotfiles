@@ -5,7 +5,7 @@ import json
 import sys
 
 def get_dunst_history():
-    result = subprocess.run(['dunstctl', 'history'], stdout=subprocess.PIPE, check=True)
+    result = subprocess.run(['dunstctl', 'history'], stdout=subprocess.PIPE)
     history = json.loads(result.stdout.decode('utf-8'))
     return history
 
@@ -33,7 +33,7 @@ def format_history(history):
                 alt = 'notification'
                 tooltip.append(f" {body}\n")
 
-    isDND = subprocess.run(['dunstctl', 'get-pause-level'], stdout=subprocess.PIPE, check=True)
+    isDND = subprocess.run(['dunstctl', 'get-pause-level'], stdout=subprocess.PIPE)
     isDND = isDND.stdout.decode('utf-8').strip()
     if isDND != '0':
         alt = "dnd"

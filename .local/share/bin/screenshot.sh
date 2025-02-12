@@ -1,60 +1,38 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
-SCREENSHOT_POST_COMMAND+=(
-)
-
-SCREENSHOT_PRE_COMMAND+=(
-)
-
-pre_cmd() {
-	for cmd in "${SCREENSHOT_PRE_COMMAND[@]}"; do
-		eval "$cmd"
-	done
-	trap 'post_cmd' EXIT
+# Restores the shader after screenshot has been taken
+restore_shader() {
+	if [ -n "$shader" ]; then
+		hyprshade on "$shader"
+	fi
 }
 
-post_cmd() {
-	for cmd in "${SCREENSHOT_POST_COMMAND[@]}"; do
-		eval "$cmd"
-	done
+# Saves the current shader and turns it off
+save_shader() {
+	shader=$(hyprshade current)
+	hyprshade off
+	trap restore_shader EXIT
 }
+
+save_shader # Saving the current shader
 
 if [ -z "$XDG_PICTURES_DIR" ]; then
 	XDG_PICTURES_DIR="$HOME/Pictures"
 fi
 
-# shellcheck source=$HOME/.local/bin/hyde-shell
-# shellcheck disable=SC1091
-if ! source "$(which hyde-shell)"; then
-	echo "[wallbash] code :: Error: hyde-shell not found."
-	echo "[wallbash] code :: Is HyDE installed?"
-	exit 1
-fi
-
-confDir="${confDir:-$XDG_CONFIG_HOME}"
+scrDir=$(dirname "$(realpath "$0")")
+source $scrDir/globalcontrol.sh
+swpy_dir="${confDir}/swappy"
 save_dir="${2:-$XDG_PICTURES_DIR/Screenshots}"
 save_file=$(date +'%y%m%d_%Hh%Mm%Ss_screenshot.png')
 temp_screenshot="/tmp/screenshot.png"
-annotation_tool=${SCREENSHOT_ANNOTATION_TOOL}
-if [[ -z "$annotation_tool" ]]; then
-	pkg_installed "swappy" && annotation_tool="swappy"
-	pkg_installed "satty" && annotation_tool="satty"
-fi
 
-annotation_args=("-o" "${save_dir}/${save_file}" "-f" "${temp_screenshot}")
+mkdir -p $save_dir
+mkdir -p $swpy_dir
+echo -e "[Default]\nsave_dir=$save_dir\nsave_filename_format=$save_file" >$swpy_dir/config
 
-annotation_args+=("${SCREENSHOT_ANNOTATION_ARGS[@]}")
-evaluated_annotation_args=$(eval echo "${annotation_args[@]}")
-mkdir -p "$save_dir"
-
-# Fixes the issue where the annotation tool doesn't save the file in the correct directory
-if [[ "$annotation_tool" == "swappy" ]]; then
-	swpy_dir="${confDir}/swappy"
-	mkdir -p "$swpy_dir"
-	echo -e "[Default]\nsave_dir=$save_dir\nsave_filename_format=$save_file" >"${swpy_dir}"/config
-fi
-
-function print_error {
+function print_error
+{
 	cat <<"EOF"
     ./screenshot.sh <action>
     ...valid actions are...
@@ -65,31 +43,21 @@ function print_error {
 EOF
 }
 
-pre_cmd
-
 case $1 in
 p) # print all outputs
-	# timeout 0.2 slurp # capture animation lol
-	# shellcheck disable=SC2086
-	"$LIB_DIR/hyde/grimblast" copysave screen $temp_screenshot && "${annotation_tool}" ${evaluated_annotation_args} # intended globbing
-	;;
+	grimblast copysave screen $temp_screenshot && restore_shader && swappy -f $temp_screenshot ;;
 s) # drag to manually snip an area / click on a window to print it
-	# shellcheck disable=SC2086
-	"$LIB_DIR/hyde/grimblast" copysave area $temp_screenshot && "${annotation_tool}" ${evaluated_annotation_args} ;; # intended globbing
-sf)                                                                                                               # frozen screen, drag to manually snip an area / click on a window to print it
-	# shellcheck disable=SC2086
-	"$LIB_DIR/hyde/grimblast" --freeze --cursor copysave area $temp_screenshot && "${annotation_tool}" ${evaluated_annotation_args} ;; # intended globbing
-m)                                                                                                                                  # print focused monitor
-	# timeout 0.2 slurp                                                                                                                  # capture animation lol
-	# shellcheck disable=SC2086
-	"$LIB_DIR/hyde/grimblast" copysave output $temp_screenshot && "${annotation_tool}" ${evaluated_annotation_args} # intended globbing
-	;;
+	grimblast copysave area $temp_screenshot && restore_shader && swappy -f $temp_screenshot ;;
+sf) # frozen screen, drag to manually snip an area / click on a window to print it
+	grimblast --freeze copysave area $temp_screenshot && restore_shader && swappy -f $temp_screenshot ;;
+m) # print focused monitor
+	grimblast copysave output $temp_screenshot && restore_shader && swappy -f $temp_screenshot ;;
 *) # invalid option
 	print_error ;;
 esac
 
-[ -f "$temp_screenshot" ] && rm "$temp_screenshot"
+rm "$temp_screenshot"
 
 if [ -f "${save_dir}/${save_file}" ]; then
-	notify-send -a "HyDE Alert" -i "${save_dir}/${save_file}" "saved in ${save_dir}"
+	notify-send -a "t1" -i "${save_dir}/${save_file}" "saved in ${save_dir}"
 fi
